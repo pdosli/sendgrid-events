@@ -17,7 +17,7 @@ def verify_sendgrid_signature(request: Request, body: bytes):
     signature_b64 = request.headers.get("X-Twilio-Email-Event-Webhook-Signature")
     timestamp = request.headers.get("X-Twilio-Email-Event-Webhook-Timestamp")
 
-    if not signature or not timestamp:
+    if not signature_b64 or not timestamp:
         raise HTTPException(status_code=400, detail="Missing SendGrid signature headers")
 
     # Decode signature (ASN.1 DER-encoded ECDSA signature)
