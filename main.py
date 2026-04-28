@@ -1,9 +1,9 @@
 import base64
-import hmac
-import hashlib
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import os
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 app = FastAPI()
 
@@ -21,16 +21,16 @@ def verify_sendgrid_signature(request: Request, body: bytes):
     # Build the signed payload
     signed_payload = timestamp.encode() + body
 
-    # Verify using HMAC SHA256 with the SendGrid public key
+    # Decode the public key
     try:
-        public_key_bytes = base64.b64decode(SENDGRID_PUBLIC_KEY)
+        public_key = VerifyKey(base64.b64decode(SENDGRID_PUBLIC_KEY))
     except Exception:
         raise HTTPException(status_code=500, detail="Invalid SendGrid public key")
 
-    verifier = hmac.new(public_key_bytes, signed_payload, hashlib.sha256)
-    expected_signature = base64.b64encode(verifier.digest()).decode()
-
-    if not hmac.compare_digest(expected_signature, signature):
+    # Verify signature
+    try:
+        public_key.verify(signed_payload, base64.b64decode(signature))
+    except BadSignatureError:
         raise HTTPException(status_code=401, detail="Invalid SendGrid signature")
 
 
