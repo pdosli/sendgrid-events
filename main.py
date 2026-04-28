@@ -36,7 +36,6 @@ def verify_sendgrid_signature(request: Request, body: bytes):
 
 @app.post("/sendgrid/events")
 async def sendgrid_events(request: Request):
-    verify_basic_auth(request)
     raw_body = await request.body()
     verify_sendgrid_signature(request, raw_body)
     events = await request.json()
