@@ -1,9 +1,11 @@
 import base64
+import json
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.exceptions import InvalidSignature
 import os
-from nacl.signing import VerifyKey
-from nacl.exceptions import BadSignatureError
 
 app = FastAPI()
 
@@ -12,25 +14,33 @@ SENDGRID_PUBLIC_KEY = os.getenv("SENDGRID_PUBLIC_KEY")
 
 # SENDGRID SIGNATURE VERIFICATION
 def verify_sendgrid_signature(request: Request, body: bytes):
-    signature = request.headers.get("x-twilio-email-event-webhook-signature")
-    timestamp = request.headers.get("x-twilio-email-event-webhook-timestamp")
+    signature_b64 = request.headers.get("X-Twilio-Email-Event-Webhook-Signature")
+    timestamp = request.headers.get("X-Twilio-Email-Event-Webhook-Timestamp")
 
     if not signature or not timestamp:
         raise HTTPException(status_code=400, detail="Missing SendGrid signature headers")
 
-    # Build the signed payload
-    signed_payload = timestamp.encode() + body
+    # Decode signature (ASN.1 DER-encoded ECDSA signature)
+    signature = base64.b64decode(signature_b64)
 
-    # Decode the public key
+    # Load ECDSA public key
     try:
-        public_key = VerifyKey(base64.b64decode(SENDGRID_PUBLIC_KEY))
+        public_key = serialization.load_pem_public_key(
+            SENDGRID_PUBLIC_KEY.encode("utf-8")
+        )
     except Exception:
         raise HTTPException(status_code=500, detail="Invalid SendGrid public key")
 
-    # Verify signature
+    # Hash timestamp + body using SHA256
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(timestamp.encode())
+    digest.update(body)
+    hashed_payload = digest.finalize()
+
+    # Verify ECDSA signature
     try:
-        public_key.verify(signed_payload, base64.b64decode(signature))
-    except BadSignatureError:
+        public_key.verify(signature, hashed_payload, ec.ECDSA(hashes.SHA256()))
+    except InvalidSignature:
         raise HTTPException(status_code=401, detail="Invalid SendGrid signature")
 
 
