@@ -1,53 +1,36 @@
 import base64
-import json
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.exceptions import InvalidSignature
 import os
 
 app = FastAPI()
 
-SENDGRID_PUBLIC_KEY = os.getenv("SENDGRID_PUBLIC_KEY")
+WEBHOOK_USER = os.getenv("WEBHOOK_USER")
+WEBHOOK_PASS = os.getenv("WEBHOOK_PASS")
 
 
-# SENDGRID SIGNATURE VERIFICATION
-def verify_sendgrid_signature(request: Request, body: bytes):
-    signature_b64 = request.headers.get("X-Twilio-Email-Event-Webhook-Signature")
-    timestamp = request.headers.get("X-Twilio-Email-Event-Webhook-Timestamp")
+def verify_basic_auth(request: Request):
+    auth = request.headers.get("authorization")
 
-    if not signature_b64 or not timestamp:
-        raise HTTPException(status_code=400, detail="Missing SendGrid signature headers")
+    if not auth or not auth.startswith("Basic "):
+        raise HTTPException(status_code=401, detail="Authentication required")
 
-    # Decode signature (ASN.1 DER-encoded ECDSA signature)
-    signature = base64.b64decode(signature_b64)
+    encoded = auth.split(" ")[1]
 
-    # Load ECDSA public key
     try:
-        public_key = serialization.load_pem_public_key(
-            SENDGRID_PUBLIC_KEY.encode("utf-8")
-        )
+        decoded = base64.b64decode(encoded).decode()
     except Exception:
-        raise HTTPException(status_code=500, detail="Invalid SendGrid public key")
+        raise HTTPException(status_code=401, detail="Invalid auth header")
 
-    # Hash timestamp + body using SHA256
-    digest = hashes.Hash(hashes.SHA256())
-    digest.update(timestamp.encode())
-    digest.update(body)
-    hashed_payload = digest.finalize()
+    username, password = decoded.split(":", 1)
 
-    # Verify ECDSA signature
-    try:
-        public_key.verify(signature, hashed_payload, ec.ECDSA(hashes.SHA256()))
-    except InvalidSignature:
-        raise HTTPException(status_code=401, detail="Invalid SendGrid signature")
+    if username != WEBHOOK_USER or password != WEBHOOK_PASS:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @app.post("/sendgrid/events")
 async def sendgrid_events(request: Request):
-    raw_body = await request.body()
-    verify_sendgrid_signature(request, raw_body)
+    verify_basic_auth(request)
     events = await request.json()
     print("Received events:", events)
     return JSONResponse({"status": "ok"})
