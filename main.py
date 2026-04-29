@@ -28,7 +28,7 @@ def convert_public_key_to_ecdsa(public_key: str):
         return load_pem_public_key(pem_key.encode("utf-8"))
 
 
-def verify_signature(payload: str, signature: str, timestamp: str, public_key: str):
+def verify_signature(payload: bytes, signature: str, timestamp: str, public_key: str):
         """
         Verify signed event webhook requests.
 
@@ -42,7 +42,7 @@ def verify_signature(payload: str, signature: str, timestamp: str, public_key: s
         :type public_key: cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey
         :return: true or false if signature is valid
         """
-        timestamped_payload = (timestamp + payload).encode('utf-8')
+        timestamped_payload = timestamp.encode('utf-8') + payload
         decoded_signature = base64.b64decode(signature)
 
         key = convert_public_key_to_ecdsa(public_key)
